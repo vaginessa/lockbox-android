@@ -10,10 +10,13 @@ import android.os.Bundle
 import android.support.design.widget.NavigationView
 import android.support.v4.view.GravityCompat
 import android.support.v4.widget.DrawerLayout
+import android.support.v7.view.ContextThemeWrapper
 import android.support.v7.widget.DividerItemDecoration
 import android.support.v7.widget.LinearLayoutManager
+import android.support.v7.widget.PopupMenu
 import android.support.v7.widget.RecyclerView
 import android.support.v7.widget.Toolbar
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -21,8 +24,7 @@ import androidx.navigation.NavController
 import androidx.navigation.findNavController
 import androidx.navigation.ui.setupWithNavController
 import com.jakewharton.rxbinding2.support.design.widget.itemSelections
-import android.widget.Button
-import android.widget.ListPopupWindow
+import com.jakewharton.rxbinding2.support.v7.widget.itemClicks
 import com.jakewharton.rxbinding2.support.v7.widget.navigationClicks
 import com.jakewharton.rxbinding2.view.clicks
 import com.squareup.picasso.Picasso
@@ -40,18 +42,16 @@ import kotlinx.android.synthetic.main.fragment_item_list.*
 import kotlinx.android.synthetic.main.nav_header.view.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import mozilla.lockbox.action.Setting
-import mozilla.lockbox.adapter.ItemListSortAdapter
-import mozilla.lockbox.extensions.view.itemClicks
 import mozilla.lockbox.model.AccountViewModel
-import mozilla.lockbox.support.dpToPixels
 
 @ExperimentalCoroutinesApi
 class ItemListFragment : CommonFragment(), ItemListView {
     private val compositeDisposable = CompositeDisposable()
     private val adapter = ItemListAdapter()
-    private lateinit var sortItemsMenu: ListPopupWindow
 
-    private lateinit var sortItemsAdapter: ItemListSortAdapter
+    private lateinit var sortItemsMenu: PopupMenu
+//    private lateinit var sortItemsAdapter: ItemListSortAdapter
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -64,7 +64,17 @@ class ItemListFragment : CommonFragment(), ItemListView {
         setupToolbar(view.toolbar, view.appDrawer)
         setupNavigationView(navController, view.navView)
         setupListView(view.entriesView)
-        setupItemListSortMenu(view.sortButton)
+
+        val context = ContextThemeWrapper(requireContext(), R.style.CustomPopupTheme)
+        sortItemsMenu = PopupMenu(context, view.sortButton)
+        sortItemsMenu.menuInflater.inflate(R.menu.sort_menu, sortItemsMenu.menu)
+        sortItemsMenu.gravity = Gravity.END
+
+        view.sortButton.clicks()
+            .subscribe {
+                sortItemsMenu.show()
+            }
+            .addTo(compositeDisposable)
 
         return view
     }
@@ -92,46 +102,23 @@ class ItemListFragment : CommonFragment(), ItemListView {
             .addTo(compositeDisposable)
     }
 
-    private fun setupItemListSortMenu(sortButton: Button) {
-        val context = requireContext()
-        sortItemsMenu = ListPopupWindow(context)
-        sortItemsAdapter = ItemListSortAdapter(
-            context,
-            R.layout.sort_menu_item,
-            sortMenuOptions.map { context.getString(it.displayStringId) }.toTypedArray()
-        )
-        sortItemsAdapter.selectedBackgroundColor = R.color.menuItemSelected
-        sortItemsMenu.setAdapter(sortItemsAdapter)
-        sortItemsMenu.anchorView = sortButton
-        sortItemsMenu.isModal = true
-        sortItemsMenu.width = dpToPixels(context, 170f)
-        sortItemsMenu.horizontalOffset = dpToPixels(context, 42f)
-        context.getDrawable(R.drawable.sort_menu_bg)?.let { sortItemsMenu.setBackgroundDrawable(it) }
-        sortItemsMenu.animationStyle = R.style.SortItemsPopupAnimation
-
-        sortButton.clicks()
-            .subscribe {
-                sortItemsMenu.show()
-            }
-            .addTo(compositeDisposable)
-    }
-
-    private fun selectSortMenuItem(position: Int) {
-        sortItemsMenu.setSelection(position)
-        sortItemsAdapter.selectedItemPosition = position
-        sortItemsMenu.dismiss()
-    }
-
-    private fun setSortButtonTitleForSortOption(sort: Setting.ItemListSort) {
-        when (sort) {
-            Setting.ItemListSort.ALPHABETICALLY -> {
-                view!!.sortButton.setText(R.string.all_entries_a_z)
-            }
-            Setting.ItemListSort.RECENTLY_USED -> {
-                view!!.sortButton.setText(R.string.all_entries_recent)
-            }
-        }
-    }
+//    private fun setupItemListSortMenu(sortButton: Button) {
+//        val context = requireContext()
+//        sortItemsMenu = ListPopupWindow(context)
+//        sortItemsAdapter = ItemListSortAdapter(
+//            context,
+//            R.layout.sort_menu_item,
+//            sortMenuOptions.map { context.getString(it.displayStringId) }.toTypedArray()
+//        )
+//        sortItemsAdapter.selectedBackgroundColor = R.color.menuItemSelected
+//        sortItemsMenu.setAdapter(sortItemsAdapter)
+//        sortItemsMenu.anchorView = sortButton
+//        sortItemsMenu.isModal = true
+//        sortItemsMenu.width = dpToPixels(context, 170f)
+//        sortItemsMenu.horizontalOffset = dpToPixels(context, 42f)
+//        context.getDrawable(R.drawable.sort_menu_bg)?.let { sortItemsMenu.setBackgroundDrawable(it) }
+//        sortItemsMenu.animationStyle = R.style.SortItemsPopupAnimation
+//    }
 
     private fun scrollToTop() {
         entriesView.layoutManager?.scrollToPosition(0)
@@ -164,10 +151,10 @@ class ItemListFragment : CommonFragment(), ItemListView {
         get() = view!!.lockNow.clicks()
 
     override val sortItemSelection: Observable<Setting.ItemListSort>
-        get() = sortItemsMenu.itemClicks().map { sortMenuOptions[it.position] }
+        get() = sortItemsMenu.itemClicks().map { getSortMenuOption(it.title.toString()) }
 
-    private val sortMenuOptions: Array<Setting.ItemListSort>
-        get() = Setting.ItemListSort.values()
+    private fun getSortMenuOption(title: String): Setting.ItemListSort =
+        Setting.ItemListSort.values().first { itemListSort -> requireContext().getString(itemListSort.displayStringId) == title }
 
     override fun updateItems(itemList: List<ItemViewModel>) {
         adapter.updateItems(itemList)
@@ -194,11 +181,13 @@ class ItemListFragment : CommonFragment(), ItemListView {
 
     override fun updateItemListSort(sort: Setting.ItemListSort) {
         // select the menu item
-        selectSortMenuItem(sortMenuOptions.indexOf(sort))
+        sortItemsMenu.menu.getItem(Setting.ItemListSort.values().indexOf(sort)).isChecked = true
 
         // set sort button text
-        setSortButtonTitleForSortOption(sort)
-
+        when (sort) {
+            Setting.ItemListSort.ALPHABETICALLY -> view!!.sortButton.setText(R.string.all_entries_a_z)
+            Setting.ItemListSort.RECENTLY_USED -> view!!.sortButton.setText(R.string.all_entries_recent)
+        }
         // scroll list view to top
         scrollToTop()
     }

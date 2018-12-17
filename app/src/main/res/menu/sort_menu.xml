@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+            android:id="@+id/alphabetically"
+            android:title="@string/sort_menu_az"/>
+
+    <item
+            android:id="@+id/recentlyUsed"
+            android:title="@string/sort_menu_recent"/>
+</menu>
